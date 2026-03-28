@@ -1,0 +1,37 @@
+# Claude Code local settings (user-specific, not shared)
+.claude/settings.local.json
+.claude/errors.log
+.claude/.initialized
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets - never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# IDE
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+*.swp
+*.swo
+*~
+
+# Build artifacts (language-specific .gitignore should extend this)
+node_modules/
+__pycache__/
+*.pyc
+target/
+build/
+dist/
+*.class
+*.o
+*.so
+*.dylib

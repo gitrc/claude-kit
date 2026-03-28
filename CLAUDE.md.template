@@ -1,0 +1,105 @@
+# Project Conventions
+
+## First-Time Setup
+Run `/setup` on your first session in this project. It:
+1. Activates git hooks (`git config core.hooksPath .githooks`)
+2. Ensures `.gitignore` has required entries
+3. Auto-installs LSP plugins for detected languages
+4. Burns non-negotiable rules into persistent memory (survives across sessions, unlike CLAUDE.md which can be deprioritized)
+
+## Non-Negotiable Rules
+
+### Security
+- NEVER commit secrets, API keys, credentials, or .env files. The pre-commit hook catches these but don't rely on it.
+- NEVER use `--no-verify` to bypass git hooks unless the user explicitly requests it and explains why.
+- Validate all input at system boundaries (user input, API responses, file I/O). Trust internal code.
+- Follow OWASP top 10 for web-facing code.
+
+### Code Review
+- All code changes are automatically reviewed before task completion (stop-gate hook).
+- Use `/review` for an on-demand review of specific files.
+- Use `/qa` for a full QA pass before shipping.
+
+### Testing
+- If you write code, verify it works. Run existing tests if they exist.
+- If you add a new function with non-trivial logic, write a test for it.
+- Never mock infrastructure in integration tests unless explicitly asked.
+
+### Commits & PRs
+- Write commit messages that explain WHY, not WHAT.
+- Stage specific files — never use `git add -A` or `git add .` blindly.
+- Never force-push to main/master.
+- After pushing a PR, use `/pr-comments` to handle reviewer feedback.
+
+### Code Quality
+- Don't add features, refactoring, or "improvements" beyond what was asked.
+- Don't add speculative abstractions. Three similar lines > premature abstraction.
+- Don't add comments for self-evident code. Do add comments for non-obvious WHY.
+- Remove dead code completely — no commented-out blocks, no unused _vars.
+- Follow language idioms: PEP 8 (Python), clippy (Rust), strict mode (TypeScript), etc.
+- Run /simplify as a final pass after completing any significant code changes.
+
+### Delegation & Context Hygiene
+- Delegate substantial work to subagents (via the Agent tool): multi-file research, complex implementations, test runs, reviews. This keeps the main chat context clean for orchestration and user interaction.
+- Simple tool calls (a single git command, reading one file to answer a question, a quick edit) can stay in the main context — spawning a subagent for `git status` is wasteful.
+- **Default to background** (`run_in_background: true`) unless the next step depends on the subagent's output. Foreground only when you need the result before proceeding.
+- Launch multiple independent subagents in parallel when possible.
+- The rule of thumb: if a task will take more than 2-3 tool calls, delegate it.
+
+### Production Code by Default (12-Factor / KISS)
+Write production-grade code from the start. Not "prototype first, fix later." The marginal cost of doing it right is small; the cost of fixing it later is enormous.
+
+- **Structured logging always.** Use the language's standard structured logger (Python: `logging` with JSON formatter or `structlog`, Java/Scala: SLF4J + Logback, TypeScript: `pino` or `winston`, Rust: `tracing`, Swift: `os.log`). Never `print()`, `console.log()`, or `println()` for operational output. Debug prints must be removed before completion.
+- **Configuration via environment.** Never hardcode URLs, ports, credentials, feature flags, or environment-specific values. Use environment variables or config files. Reference `.env.example` for documentation.
+- **Explicit dependencies.** Always declare dependencies in the project's manifest (requirements.txt/pyproject.toml, package.json, Cargo.toml, build.sbt, Package.swift). Never rely on globally installed packages.
+- **Python: ALWAYS use a virtual environment.** Never run `pip install`, `python`, `pytest`, or any Python command outside an activated venv. If no venv exists, create one first (`python3 -m venv .venv && source .venv/bin/activate`). Activate the venv before EVERY Python command in EVERY Bash call — do not assume it persists between tool calls. Never use `--break-system-packages`. This is NON-NEGOTIABLE.
+- **Stateless processes.** Don't store state in local files or in-memory globals that won't survive a restart. Use external stores (DB, cache, object storage).
+- **Separate concerns.** Entry point, business logic, and I/O adapters should be distinct. A CLI script still deserves a clean boundary between "parse args" and "do work."
+- **Error handling with context.** Catch errors at boundaries, add context, propagate or log. Never silently swallow exceptions. Never use bare `except:` / `catch(e)` without re-raising or logging.
+- **Graceful degradation.** Services should handle SIGTERM cleanly. Long-running processes need health checks. Retry with backoff for transient failures.
+- **Structured argument parsing for CLIs.** Any script or tool that accepts arguments must use a proper argument parser — never `sys.argv[1]` slicing or manual positional parsing. Use: Python: `argparse` or `click`/`typer`, TypeScript: `commander` or `yargs`, Rust: `clap`, Java: `picocli`, Go: `cobra` or `flag`, Swift: `ArgumentParser`. Include `--help` output, argument validation, and clear error messages on bad input.
+- **KISS above all.** The simplest solution that meets requirements is the correct one. No design patterns for their own sake. No framework when a library suffices. No library when stdlib suffices.
+
+### Architecture
+- Prefer editing existing files over creating new ones.
+- Don't create utilities/helpers for one-time operations.
+- Don't design for hypothetical future requirements.
+- Match complexity to actual task requirements.
+
+## Available Skills
+- `/setup` — First-time project setup: git hooks, .gitignore, LSP plugins, burn rules into memory
+- `/qa` — Full QA pass: reviews all changes, reports findings, then commit/push on approval
+- `/review [file]` — Quick code review of changes (no commit step — use when you just want a second look)
+- `/pr-comments [number]` — Address GitHub PR review comments from Copilot or reviewers
+- `/debug` — Systematic 4-phase debugging with anti-thrashing guardrails
+- `/ship [message]` — Lightweight commit + push + open PR (use after /review or /qa)
+- `/simplify` — (built-in) Refactor pass: finds unnecessary code, improves maintainability
+- `/inject <target-dir>` — Inject this template into an existing project (merges, doesn't clobber)
+- `/batch <instruction>` — (built-in) Parallel codebase-wide changes, each in its own worktree + PR
+
+## Recommended Plugins (per language)
+
+Install LSP plugins for real-time type checking and diagnostics in your language:
+- Python: `claude plugin install pyright-lsp`
+- TypeScript: `claude plugin install typescript-lsp`
+- Rust: `claude plugin install rust-analyzer-lsp`
+- Java: `claude plugin install jdtls-lsp`
+- Swift/iOS: `claude plugin install swift-lsp`
+- Kotlin: `claude plugin install kotlin-lsp`
+- Go: `claude plugin install gopls-lsp`
+
+## Supported Languages
+Python, Java, Scala, TypeScript/JavaScript, Rust, Swift/iOS, Go, Kotlin.
+If you're working in a language not listed here, note any missing linting/convention gaps.
+
+## Git Hooks (automatic)
+- **pre-commit**: Blocks merge conflicts, large files, secrets, sensitive files. Warns on debug statements.
+- **pre-push**: Blocks force-push to main/master. Warns on WIP commits.
+
+## Claude Code Hooks (automatic)
+- **Stop gate**: Blocks task completion until code changes are reviewed. Skips trivial changes (<5 lines). Verifies review actually happened before allowing completion.
+- **Dangerous command blocker**: Prevents destructive bash commands (rm -rf, force push to main, etc.).
+- **Security scanner**: Monitors code edits for security anti-patterns (eval, innerHTML, pickle, SQL injection, etc.) and warns with safe alternatives.
+- **Notifications**: Desktop notification when Claude needs attention (macOS + Linux).
+- **Context monitor**: Tracks tool call count and transcript size. Nudges to `/compact` when context gets heavy (checks every 20 turns, nudges at ~800KB or 100+ calls).
+- **StopFailure handler**: Notifies user on API errors (rate limits, auth failures, server errors) with actionable messages. Logs to `.claude/errors.log`.

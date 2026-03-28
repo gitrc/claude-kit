@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Universal pre-push hook - safety checks before pushing
+set -euo pipefail
+
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+remote="$1"
+url="$2"
+
+ZERO_SHA="0000000000000000000000000000000000000000"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Skip delete operations
+  if [ "$local_sha" = "$ZERO_SHA" ]; then
+    continue
+  fi
+
+  # Extract branch name
+  branch=$(echo "$remote_ref" | sed 's|refs/heads/||')
+
+  # 1. Block force-push to protected branches
+  if [[ "$branch" == "main" || "$branch" == "master" ]]; then
+    if [ "$remote_sha" != "$ZERO_SHA" ]; then
+      if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+        echo -e "${RED}ERROR: Force push to '$branch' is blocked.${NC}"
+        echo "  If you really need to force push, use: git push --force-with-lease"
+        exit 1
+      fi
+    fi
+
+    echo -e "${YELLOW}WARNING: Pushing directly to '$branch'. Consider using a feature branch + PR.${NC}"
+  fi
+
+  # 2. Check for WIP commits being pushed (skip on new branches)
+  if [ "$remote_sha" != "$ZERO_SHA" ]; then
+    wip_commits=$(git log --oneline "$remote_sha".."$local_sha" 2>/dev/null | grep -iE '^[0-9a-f]+ (wip|fixup!|squash!|WIP)' || true)
+  else
+    # New branch — check all commits not on main/master
+    default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
+    wip_commits=$(git log --oneline "$default_branch".."$local_sha" 2>/dev/null | grep -iE '^[0-9a-f]+ (wip|fixup!|squash!|WIP)' || true)
+  fi
+  if [ -n "$wip_commits" ]; then
+    echo -e "${YELLOW}WARNING: WIP/fixup commits being pushed:${NC}"
+    echo "$wip_commits" | sed 's/^/  /'
+  fi
+
+done
+
+exit 0

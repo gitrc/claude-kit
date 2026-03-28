@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Universal pre-commit hook - language agnostic safety checks
+set -euo pipefail
+
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+errors=0
+warnings=0
+
+# Get staged files
+staged_files=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+# 1. Check for merge conflict markers
+conflict_files=$(echo "$staged_files" | xargs grep -l '^<<<<<<< \|^=======$\|^>>>>>>> ' 2>/dev/null || true)
+if [ -n "$conflict_files" ]; then
+  echo -e "${RED}ERROR: Merge conflict markers found in:${NC}"
+  echo "$conflict_files" | sed 's/^/  /'
+  errors=$((errors + 1))
+fi
+
+# 2. Check for large files (>5MB)
+for file in $staged_files; do
+  if [ -f "$file" ]; then
+    size=$(wc -c < "$file" 2>/dev/null || echo 0)
+    if [ "$size" -gt 5242880 ]; then
+      echo -e "${RED}ERROR: File too large ($(( size / 1048576 ))MB): $file${NC}"
+      errors=$((errors + 1))
+    fi
+  fi
+done
+
+# 3. Check for secrets/credentials patterns
+secret_patterns=(
+  'AKIA[0-9A-Z]{16}'                    # AWS Access Key
+  'AIza[0-9A-Za-z\\-_]{35}'             # Google API Key
+  'sk-[0-9a-zA-Z]{48}'                  # OpenAI/Anthropic API Key
+  'ghp_[0-9a-zA-Z]{36}'                 # GitHub Personal Access Token
+  'xox[baprs]-[0-9a-zA-Z-]+'            # Slack Token
+  '-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----'  # Private Key
+  'password\s*=\s*["\x27][^"\x27]{8,}'  # Hardcoded passwords
+)
+
+for file in $staged_files; do
+  if [ -f "$file" ] && file "$file" | grep -q text; then
+    for pattern in "${secret_patterns[@]}"; do
+      matches=$(grep -nE "$pattern" "$file" 2>/dev/null || true)
+      if [ -n "$matches" ]; then
+        echo -e "${RED}ERROR: Possible secret/credential in $file:${NC}"
+        echo "$matches" | head -3 | sed 's/^/  /'
+        errors=$((errors + 1))
+      fi
+    done
+  fi
+done
+
+# 4. Check for debug/temp artifacts that shouldn't be committed
+debug_patterns='console\.log\(|debugger;|binding\.pry|import pdb|breakpoint()'
+debug_files=$(echo "$staged_files" | xargs grep -lE "$debug_patterns" 2>/dev/null || true)
+if [ -n "$debug_files" ]; then
+  echo -e "${YELLOW}WARNING: Debug statements found in:${NC}"
+  echo "$debug_files" | sed 's/^/  /'
+  warnings=$((warnings + 1))
+fi
+
+# 5. Check for files that should not be committed
+forbidden_files=$(echo "$staged_files" | grep -E '\.env$|\.env\.[^e]|credentials\.json|service-account.*\.json|\.pem$|\.key$' || true)
+if [ -n "$forbidden_files" ]; then
+  echo -e "${RED}ERROR: Sensitive files staged for commit:${NC}"
+  echo "$forbidden_files" | sed 's/^/  /'
+  errors=$((errors + 1))
+fi
+
+if [ $errors -gt 0 ]; then
+  echo -e "\n${RED}Commit blocked: $errors error(s) found. Fix issues above or use --no-verify to bypass.${NC}"
+  exit 1
+fi
+
+if [ $warnings -gt 0 ]; then
+  echo -e "\n${YELLOW}$warnings warning(s) found. Proceeding with commit.${NC}"
+fi
+
+exit 0
