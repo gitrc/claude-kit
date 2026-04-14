@@ -19,7 +19,10 @@ For each changed code file:
   - **Code quality**: dead code, unused imports, naming clarity, DRY violations
   - **Production standards**: structured logging (not print), env-based config, proper arg parsing
   - **Language idioms**: is the code idiomatic for its language?
+  - **Architecture**: coupling, dependency direction, breaking API contract changes
   - **Tests**: are changes covered by tests? If not, flag it.
+
+**Don't flag** noise CI/linters already catch: formatter output, import ordering, trailing whitespace, lint warnings from clippy/ESLint/pylint.
 
 ## Step 3: Report Findings
 Present a clear summary to the user:
@@ -29,6 +32,7 @@ Present a clear summary to the user:
   - **SHOULD FIX**: missing error handling, code quality issues
   - **CONSIDER**: style, naming, minor improvements
 - Overall assessment: **ready to ship** / **needs fixes first**
+- Optionally, a one-line callout of a notably good pattern worth reinforcing
 
 **Do NOT silently fix issues.** The user must see and approve all changes. If you found MUST FIX issues, list exactly what needs to change and ask the user: "Should I fix these issues?"
 

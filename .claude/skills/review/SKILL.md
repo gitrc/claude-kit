@@ -10,8 +10,15 @@ allowed-tools: Read, Grep, Glob, Bash
 Perform a focused code review.
 
 ## Scope
-If an argument is provided, review only `$ARGUMENTS`.
-Otherwise, review all uncommitted changes: run `git diff HEAD --name-only` and review each changed file.
+If an argument is provided, review only `$ARGUMENTS`. It may also name a focus area (e.g. "focus on security") — concentrate on that area but still flag any critical issues elsewhere.
+
+Otherwise, pick the diff command that matches the request:
+- **Current branch vs main**: `git --no-pager diff --no-prefix --unified=100000 --minimal $(git merge-base main --fork-point)...HEAD`
+- **Staged only**: `git --no-pager diff --cached --no-prefix --unified=100000 --minimal`
+- **Unstaged only**: `git --no-pager diff --no-prefix --unified=100000 --minimal`
+- **Default (uncommitted)**: `git diff HEAD --name-only` then review each file.
+
+If the diff is empty, say so — don't fabricate a review.
 
 ## Review Checklist
 For each file:
@@ -19,8 +26,12 @@ For each file:
 2. **Security**: Injection, XSS, secrets, insecure defaults, OWASP top 10
 3. **Performance**: Unnecessary allocations, N+1 queries, missing indexes, unbounded loops
 4. **Error handling**: Uncaught exceptions, swallowed errors, missing boundary validation
-5. **Readability**: Naming, complexity, unnecessary abstractions
-6. **Language idioms**: Is the code idiomatic? (Python: PEP 8, Rust: clippy conventions, TS: strict mode patterns, etc.)
+5. **Architecture**: Coupling, dependency direction (domain shouldn't depend on infra), breaking API contract changes
+6. **Readability**: Naming, complexity, unnecessary abstractions
+7. **Language idioms**: Is the code idiomatic? (Python: PEP 8, Rust: clippy conventions, TS: strict mode patterns, etc.)
+
+## What NOT to Flag
+Skip noise CI/linters already catch: formatter output (prettier/black/rustfmt/gofmt), import ordering, trailing whitespace, missing trailing newlines, lint warnings already surfaced by clippy/ESLint/pylint.
 
 ## Output Format
 For each issue found, report:
