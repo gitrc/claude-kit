@@ -35,7 +35,7 @@ Both Stop hooks fire independently on every Stop event — each can block, and C
 ### Git Hooks
 | Hook | What it does |
 |------|-------------|
-| **pre-commit** | Blocks secrets, merge conflict markers, large files, sensitive files. Warns on debug statements. |
+| **pre-commit** | Blocks secrets, merge conflict markers, large files (>5MB), sensitive files (.env, .pem, credentials.json, etc.). Warns on debug statements (console.log, breakpoint, pdb) and unsafe code patterns (eval, pickle.load, innerHTML, shell=True, yaml.load without SafeLoader, weak hashes). Warnings are advisory — scoped to code files only, so markdown docs that *describe* anti-patterns don't false-positive. |
 | **pre-push** | Blocks force-push to main/master. Warns on WIP/fixup commits. |
 
 ### Production Code Standards (CLAUDE.md.template)

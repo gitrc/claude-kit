@@ -114,7 +114,7 @@ Python, Java, Scala, TypeScript/JavaScript, Rust, Swift/iOS, Go, Kotlin.
 If you're working in a language not listed here, note any missing linting/convention gaps.
 
 ## Git Hooks (automatic)
-- **pre-commit**: Blocks merge conflicts, large files, secrets, sensitive files. Warns on debug statements.
+- **pre-commit**: Blocks merge conflicts, large files (>5MB), secrets/credentials, sensitive files (.env, .pem, credentials.json). Warns on debug statements (console.log, breakpoint, pdb) and unsafe code patterns (eval, pickle.load, innerHTML, shell=True, yaml.load without SafeLoader, weak hashes). Warnings are advisory and scoped to code files only — markdown docs that describe anti-patterns don't trigger false positives.
 - **pre-push**: Blocks force-push to main/master. Warns on WIP commits.
 
 ## Claude Code Hooks (automatic)

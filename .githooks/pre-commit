@@ -58,16 +58,53 @@ for file in $staged_files; do
   fi
 done
 
-# 4. Check for debug/temp artifacts that shouldn't be committed
-debug_patterns='console\.log\(|debugger;|binding\.pry|import pdb|breakpoint()'
-debug_files=$(echo "$staged_files" | xargs grep -lE "$debug_patterns" 2>/dev/null || true)
-if [ -n "$debug_files" ]; then
-  echo -e "${YELLOW}WARNING: Debug statements found in:${NC}"
-  echo "$debug_files" | sed 's/^/  /'
-  warnings=$((warnings + 1))
+# Restrict source-level scans (debug prints, unsafe patterns) to code files.
+# Markdown and template docs routinely describe these patterns in prose
+# ("never `print()`", "avoid `eval()`") and would otherwise false-positive.
+code_files=$(echo "$staged_files" | grep -E '\.(py|js|jsx|ts|tsx|rb|java|kt|scala|go|rs|swift|c|cpp|h|hpp|cs|php|vue|svelte)$' || true)
+
+# 4. Check for debug/temp artifacts that shouldn't be committed (code files only)
+if [ -n "$code_files" ]; then
+  debug_patterns='console\.log\(|debugger;|binding\.pry|import pdb|breakpoint\('
+  debug_files=$(echo "$code_files" | xargs grep -lE "$debug_patterns" 2>/dev/null || true)
+  if [ -n "$debug_files" ]; then
+    echo -e "${YELLOW}WARNING: Debug statements found in:${NC}"
+    echo "$debug_files" | sed 's/^/  /'
+    warnings=$((warnings + 1))
+  fi
 fi
 
-# 5. Check for files that should not be committed
+# 5. Check for unsafe code patterns (code files only, mirrors security-scan.sh).
+# Advisory — warn but don't block. If the usage is intentional, proceed.
+if [ -n "$code_files" ]; then
+  unsafe_hits=""
+  for file in $code_files; do
+    [ -f "$file" ] || continue
+    # eval( — excluding ast.literal_eval and object.eval (e.g. jest matchers)
+    if grep -nE 'eval\(' "$file" 2>/dev/null | grep -vE 'literal_eval\(|\.eval\(' | grep -q .; then
+      unsafe_hits="${unsafe_hits}${file}: eval(\n"
+    fi
+    grep -qE 'pickle\.loads?\(' "$file" 2>/dev/null && unsafe_hits="${unsafe_hits}${file}: pickle.load/loads\n"
+    grep -qE 'innerHTML|outerHTML|dangerouslySetInnerHTML' "$file" 2>/dev/null && unsafe_hits="${unsafe_hits}${file}: innerHTML/outerHTML (XSS risk)\n"
+    grep -qE 'document\.write\(' "$file" 2>/dev/null && unsafe_hits="${unsafe_hits}${file}: document.write\n"
+    grep -qE 'shell=True' "$file" 2>/dev/null && unsafe_hits="${unsafe_hits}${file}: subprocess shell=True\n"
+    grep -qE 'os\.system\(' "$file" 2>/dev/null && unsafe_hits="${unsafe_hits}${file}: os.system\n"
+    # yaml.load without SafeLoader / safe_load
+    if grep -qE 'yaml\.load\(' "$file" 2>/dev/null && ! grep -qE 'SafeLoader|yaml\.safe_load' "$file" 2>/dev/null; then
+      unsafe_hits="${unsafe_hits}${file}: yaml.load without SafeLoader\n"
+    fi
+    grep -qE 'Runtime\.getRuntime\(\)\.exec' "$file" 2>/dev/null && unsafe_hits="${unsafe_hits}${file}: Runtime.getRuntime().exec (Java)\n"
+    grep -qE 'crypto/md5|crypto/sha1|hashlib\.(md5|sha1)\(' "$file" 2>/dev/null && unsafe_hits="${unsafe_hits}${file}: weak hash (md5/sha1)\n"
+  done
+  if [ -n "$unsafe_hits" ]; then
+    echo -e "${YELLOW}WARNING: Unsafe code patterns found:${NC}"
+    printf '%b' "$unsafe_hits" | sed 's/^/  /'
+    echo "  (Advisory. If intentional, proceed. See .claude/hooks/security-scan.sh for safe alternatives.)"
+    warnings=$((warnings + 1))
+  fi
+fi
+
+# 6. Check for files that should not be committed
 forbidden_files=$(echo "$staged_files" | grep -E '\.env$|\.env\.[^e]|credentials\.json|service-account.*\.json|\.pem$|\.key$' || true)
 if [ -n "$forbidden_files" ]; then
   echo -e "${RED}ERROR: Sensitive files staged for commit:${NC}"
