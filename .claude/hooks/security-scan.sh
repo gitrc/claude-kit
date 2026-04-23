@@ -5,11 +5,9 @@ set -euo pipefail
 
 input=$(cat)
 
-# Skip all checks if running with --dangerously-skip-permissions
-perm_mode=$(echo "$input" | grep -o '"permission_mode"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"permission_mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
-if [ "$perm_mode" = "bypassPermissions" ]; then
-  exit 0
-fi
+# Note: this hook is ADVISORY (never blocks). Run regardless of permission
+# mode — bypassPermissions is about not prompting for tool approval, not
+# about suppressing safety warnings.
 
 # Extract tool name
 tool_name=$(echo "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')

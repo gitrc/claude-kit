@@ -24,7 +24,6 @@ Read the existing `.gitignore` (or create one if it doesn't exist). Ensure these
 # Claude Code
 .claude/settings.local.json
 .claude/errors.log
-.claude/.initialized
 CLAUDE.md.template
 
 # Secrets
@@ -112,9 +111,7 @@ This skill "burns in" the non-negotiable rules so they persist reliably.
 
 5. **Update MEMORY.md** index with pointers to each new memory file.
 
-6. **Mark setup complete**: Run `touch .claude/.initialized` so the preflight hook knows not to nag on future sessions.
-
-7. **Report** what was done:
+6. **Report** what was done:
    - Git hooks status
    - Each rule that was burned into memory
    - Any existing memories that were updated vs created new

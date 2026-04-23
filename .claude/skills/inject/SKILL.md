@@ -23,7 +23,7 @@ Copies the Claude Code development template (hooks, skills, settings, git hooks)
      - Copy `hooks/` directory (overwrite — hooks are template-managed)
      - Copy `skills/` directory (overwrite — skills are template-managed)
      - **Merge** `settings.json`: read both files, merge the hooks config from the template into the target's existing settings. Do not overwrite non-hook settings the target may have (like permissions).
-   - Never copy `settings.local.json` or `.initialized`
+   - Never copy `settings.local.json` or `errors.log`
 
 3. **Copy .githooks/ directory**:
    - Copy the entire `.githooks/` directory to the target.
@@ -40,7 +40,6 @@ Copies the Claude Code development template (hooks, skills, settings, git hooks)
 6. **Do NOT copy**:
    - `.git/` directory
    - `.claude/settings.local.json`
-   - `.claude/.initialized`
    - `.claude/errors.log`
    - Any other project-specific state
 

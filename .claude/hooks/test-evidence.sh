@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Stop hook: blocks completion if code changes exist in a project that has a
-# test runner, but no test command was executed in the current session.
+# Stop hook: on the first stop where code changes exist in a project that has
+# a test runner and no test command has run in this session, block once and
+# request that tests be run. On subsequent stops with the SAME fingerprint,
+# allow — Claude has already been asked. When the fingerprint changes (new
+# code), request again. This mirrors stop-gate's one-block-per-fingerprint
+# pattern to prevent infinite loops if the user explicitly forbids running
+# tests and Claude keeps trying to stop.
 #
 # Skip cases (exit 0 without blocking):
 #   - No code changes
 #   - Diff is trivial (<5 lines, no untracked code files)
 #   - No test runner detected for this project
-#   - Transcript unavailable
 #   - A recognizable test command appears in the transcript
+#   - This fingerprint was already requested for test-evidence this session
 
 set -euo pipefail
 
@@ -19,7 +24,11 @@ extract_json_string() {
   echo "$input" | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
 }
 
+session_id=$(extract_json_string "session_id")
+session_id="${session_id:-unknown}"
 transcript_path=$(extract_json_string "transcript_path")
+
+marker="/tmp/claude-test-evidence-${session_id}"
 
 # --- 1. Detect code changes (mirrors stop-gate) ---
 code_extensions='py|java|scala|kt|ts|tsx|js|jsx|rs|swift|go|rb|c|cpp|h|hpp|cs|php|vue|svelte'
@@ -28,11 +37,13 @@ untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E
 all_changes="${changed_files}${untracked_files}"
 
 if [ -z "$all_changes" ]; then
+  rm -f "$marker" 2>/dev/null
   exit 0
 fi
 
 diff_lines=$(git diff HEAD --stat 2>/dev/null | tail -1 | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | grep -oE '[0-9]+' | paste -sd+ - | bc 2>/dev/null || echo "0")
 if [ "${diff_lines:-0}" -lt 5 ] && [ -z "$untracked_files" ]; then
+  rm -f "$marker" 2>/dev/null
   exit 0
 fi
 
@@ -75,10 +86,31 @@ fi
 # Recognizable test invocations. Intentionally broad; false-positives here just
 # mean "Claude satisfied the gate with something test-ish," which is fine.
 if grep -qE '(pytest|npm (run )?test|yarn test|pnpm test|bun test|cargo test|go test|sbt( |/)test|mvn( |/)test|gradle(w)?( |/)test|swift test|jest|vitest|mocha|rspec|rake test|make test|\./test\.sh|\./run_tests\.sh|tox)' "$transcript_path" 2>/dev/null; then
+  rm -f "$marker" 2>/dev/null
   exit 0
 fi
 
-# --- 4. Block ---
+# --- 4. Fingerprint-based one-block backstop ---
+# Prevents infinite loop when the user forbids tests: ask once per change-set,
+# then allow. New code (different fingerprint) re-requests.
+if command -v shasum &>/dev/null; then
+  current_fingerprint=$(echo "$all_changes" | sort | shasum -a 256 | cut -d' ' -f1)
+elif command -v sha256sum &>/dev/null; then
+  current_fingerprint=$(echo "$all_changes" | sort | sha256sum | cut -d' ' -f1)
+else
+  current_fingerprint=$(echo "$all_changes" | sort | tr '\n' '|')
+fi
+
+if [ -f "$marker" ]; then
+  stored=$(cat "$marker" 2>/dev/null || echo "")
+  if [ "$current_fingerprint" = "$stored" ]; then
+    exit 0
+  fi
+fi
+
+echo "$current_fingerprint" > "$marker"
+
+# --- 5. Block ---
 file_count=$(echo "$all_changes" | wc -l | tr -d ' ')
 
 # Build reason as a plain string to avoid heredoc quoting pitfalls.

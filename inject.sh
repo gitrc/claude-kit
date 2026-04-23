@@ -125,7 +125,7 @@ fi
 
 # --- Skip list ---
 echo ""
-echo -e "  ${DIM}Skipped: .git/, settings.local.json, .initialized, errors.log${NC}"
+echo -e "  ${DIM}Skipped: .git/, settings.local.json, errors.log${NC}"
 
 # --- Done ---
 echo ""

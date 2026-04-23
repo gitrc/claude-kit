@@ -78,7 +78,7 @@ Or from a local clone:
 - Merges `.gitignore` entries (no duplicates)
 - Backs up existing `settings.json` before overwriting
 - Copies `CLAUDE.md.template` (never touches your `CLAUDE.md`)
-- Skips `.git/`, `settings.local.json`, `.initialized`
+- Skips `.git/`, `settings.local.json`, `errors.log`
 
 ## How It Works
 
