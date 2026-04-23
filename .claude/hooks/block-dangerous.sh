@@ -23,10 +23,11 @@ fi
 # Dangerous patterns — block with exit 2
 # Each pattern is checked against the full command string
 dangerous_patterns=(
-  'rm -rf /[[:space:]]*$'
-  'rm -rf /[[:space:]]'
-  'rm -rf \.[[:space:]]*$'
-  'rm -rf \*'
+  # Word-boundary anchors prevent false positives on aliases like `safe-rm`.
+  '\brm[[:space:]]+-rf[[:space:]]+/[[:space:]]*$'
+  '\brm[[:space:]]+-rf[[:space:]]+/[[:space:]]'
+  '\brm[[:space:]]+-rf[[:space:]]+\.[[:space:]]*$'
+  '\brm[[:space:]]+-rf[[:space:]]+\*'
   'git push[[:space:]].*--force([[:space:]]|$).*\b(main|master)\b'
   'git push[[:space:]].*-f([[:space:]]|$).*\b(main|master)\b'
   'git push[[:space:]].*\b(main|master)\b.*--force([[:space:]]|$)'
