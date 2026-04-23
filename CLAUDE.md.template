@@ -20,6 +20,24 @@ Run `/setup` on your first session in this project. It:
 - Use `/review` for an on-demand review of specific files.
 - Use `/qa` for a full QA pass before shipping.
 
+### No Performative Agreement
+When receiving feedback — from the user, a PR reviewer, Copilot, or any automated critic — never respond with performative agreement:
+- Never say "You're absolutely right!", "Great catch!", "Excellent feedback!", "Thanks for catching that!", or any gratitude expression.
+- Never say "Let me implement that now" before verifying the suggestion is correct.
+- Instead: restate the technical requirement, ask a clarifying question, push back with technical reasoning, or just fix it and show the diff. Actions over words.
+- When a reviewer is wrong, push back with technical reasoning — not defensiveness, not blind compliance. Reviewers (human or bot) can be wrong.
+- When a reviewer is right, just fix it. State the fix in one line: "Fixed. <what changed>." No thanks, no praise.
+- See `/address-review` for the full policy.
+
+### Evidence Before Claims
+Never claim work is done, fixed, passing, shipped, or ready without running the verification command in the current turn and reading its output.
+- "Should work now", "looks correct", "probably passes" — none of these are completion claims. If you don't have fresh evidence, say so.
+- Tests pass? Run the test command, see 0 failures, then claim.
+- Bug fixed? Re-run the original reproduction case, see it pass, then claim.
+- Subagent reports success? Check `git diff` yourself, verify the changes, then claim.
+- Confidence is not evidence. "Linter passed" is not "build passed" is not "tests passed."
+- See `/verify` for the full gate and the claim→evidence map.
+
 ### Testing
 - If you write code, verify it works. Run existing tests if they exist.
 - If you add a new function with non-trivial logic, write a test for it.
@@ -68,9 +86,12 @@ Write production-grade code from the start. Not "prototype first, fix later." Th
 
 ## Available Skills
 - `/setup` — First-time project setup: git hooks, .gitignore, LSP plugins, burn rules into memory
+- `/tdd` — Test-driven development: failing test first, watch it fail, minimal code to pass
 - `/qa` — Full QA pass: reviews all changes, reports findings, then commit/push on approval
 - `/review [file]` — Quick code review of changes (no commit step — use when you just want a second look)
+- `/verify` — Gate before claiming work is done. Run the verification command, then claim the result
 - `/pr-comments [number]` — Address GitHub PR review comments from Copilot or reviewers
+- `/address-review` — Policy for receiving review feedback: verify before implementing, push back with reasoning, no performative agreement
 - `/debug` — Systematic 4-phase debugging with anti-thrashing guardrails
 - `/ship [message]` — Lightweight commit + push + open PR (use after /review or /qa)
 - `/simplify` — (built-in) Refactor pass: finds unnecessary code, improves maintainability
@@ -98,6 +119,7 @@ If you're working in a language not listed here, note any missing linting/conven
 
 ## Claude Code Hooks (automatic)
 - **Stop gate**: Blocks task completion until code changes are reviewed. Skips trivial changes (<5 lines). Verifies review actually happened before allowing completion.
+- **Test-evidence gate**: Blocks task completion if code changes exist and no test command was run in the current session. Detects the project's test runner (pytest, npm test, cargo test, go test, sbt/mvn/gradle test, swift test) and scans the transcript for evidence. Skips trivial changes and projects with no detectable test runner.
 - **Dangerous command blocker**: Prevents destructive bash commands (rm -rf, force push to main, etc.).
 - **Security scanner**: Monitors code edits for security anti-patterns (eval, innerHTML, pickle, SQL injection, etc.) and warns with safe alternatives.
 - **Notifications**: Desktop notification when Claude needs attention (macOS + Linux).

@@ -19,6 +19,12 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.sh\"",
             "timeout": 10,
             "statusMessage": "Checking for unreviewed code changes..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-evidence.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for test-run evidence..."
           }
         ]
       }

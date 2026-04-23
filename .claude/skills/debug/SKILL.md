@@ -61,8 +61,8 @@ Only proceed once you have a genuinely new hypothesis, not a tweak of the old on
 2. **Check for collateral damage** — does the fix break anything else?
    - Read callers of the changed code.
    - Run existing tests.
-3. **Verify the fix** — re-run the exact reproduction case from Phase 1.
-4. **Add a regression test** if one doesn't exist for this case.
+3. **Verify the fix** — apply the `/verify` gate. Re-run the exact reproduction case from Phase 1, see it pass, then claim the bug is fixed. No "should be fixed now" without evidence.
+4. **Add a regression test** if one doesn't exist for this case. Prove it catches the bug: revert the fix, see the test fail; restore the fix, see it pass. A regression test that only passes isn't a regression test.
 5. **Clean up** — remove any debug logging or temporary instrumentation.
 
 ## Output

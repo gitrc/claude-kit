@@ -8,6 +8,10 @@ Production-grade development template for Claude Code. Automated code review gat
 | Hook | What it does |
 |------|-------------|
 | **Stop gate** | Blocks task completion until code changes are reviewed. Skips trivial changes (<5 lines). |
+| **Test-evidence gate** | Blocks task completion if code changes exist and no test command was run this session. Skips trivial changes and projects without a detectable test runner. |
+
+Both Stop hooks fire independently on every Stop event — each can block, and Claude handles the block by addressing the reason before trying to stop again.
+
 | **Dangerous command blocker** | Catches destructive commands (`rm -rf /`, force push to main, bare `pip install`, etc.) before execution. |
 | **Security scanner** | Warns on code anti-patterns (eval, innerHTML, pickle, SQL injection) as you write. Advisory, not blocking. |
 | **Context monitor** | Tracks session size, nudges to `/compact` before quality degrades. |
@@ -18,10 +22,13 @@ Production-grade development template for Claude Code. Automated code review gat
 | Skill | What it does |
 |-------|-------------|
 | `/setup` | First-time project setup: git hooks, .gitignore, LSP plugins, burn rules into memory. |
+| `/tdd` | Test-driven development workflow: failing test first, watch it fail, minimal code to pass. |
 | `/qa` | Full QA pass: reviews all changes, reports findings, commit/push on approval. |
 | `/review [file]` | Quick code review. No commit step. |
+| `/verify` | Gate before claiming work is done. Run the verification command, then claim the result. |
 | `/ship [message]` | Lightweight commit + push + open PR. Use after `/review` or `/qa`. |
 | `/pr-comments [number]` | Fetch GitHub PR review comments, address each one, commit fixes, reply and resolve threads. |
+| `/address-review` | Policy for receiving review feedback: verify before implementing, push back with reasoning, no performative agreement. |
 | `/debug` | Systematic 4-phase debugging with anti-thrashing (3 failed fixes = stop and rethink). |
 | `/inject <target-dir>` | Inject this template into an existing project. Merges, doesn't clobber. |
 
