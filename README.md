@@ -27,6 +27,7 @@ Both Stop hooks fire independently on every Stop event — each can block, and C
 | `/review [file]` | Quick code review. No commit step. |
 | `/verify` | Gate before claiming work is done. Run the verification command, then claim the result. |
 | `/ship [message]` | Lightweight commit + push + open PR. Use after `/review` or `/qa`. |
+| `/pre-pr-review` | Ships the branch diff to an OpenAI model (default `gpt-4.1`) so a *different* set of weights reviews before the PR opens. Same-model review has correlated blind spots — this is the council-of-LLMs counterweight. No-ops gracefully if `OPENAI_API_KEY` is unset. |
 | `/pr-comments [number]` | Fetch GitHub PR review comments, address each one, commit fixes, reply and resolve threads. |
 | `/address-review` | Policy for receiving review feedback: verify before implementing, push back with reasoning, no performative agreement. |
 | `/debug` | Systematic 4-phase debugging with anti-thrashing (3 failed fixes = stop and rethink). |

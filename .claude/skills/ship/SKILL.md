@@ -23,6 +23,12 @@ Lightweight shipping workflow. Code review lives in `/review` and `/qa`. `/ship`
    - If the project has no tests configured, say so explicitly rather than silently skipping — "No test suite detected. Shipping without test evidence."
    - If any verification fails, stop. Do not commit. Report the failure to the user.
 
+   **Then, if the project has `.claude/skills/pre-pr-review/run.py` and `$OPENAI_API_KEY` is set, run the different-model reviewer:**
+   ```bash
+   python3 .claude/skills/pre-pr-review/run.py
+   ```
+   This ships the branch diff to an OpenAI model — a different set of weights than Claude — to catch what same-model self-review misses. Pass the findings to the user verbatim. If CRITICAL findings are non-zero (exit code 2), ask for confirmation before continuing to commit. Do NOT auto-fix — apply `/address-review` policy and the user's call. If `OPENAI_API_KEY` is unset or the script is absent, skip silently and continue — this step is advisory.
+
 4. **Determine commit message**:
    - If the user provided an argument, use it as the commit message.
    - Otherwise, generate a concise commit message from the diff (explain WHY, not WHAT).

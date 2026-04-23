@@ -90,6 +90,7 @@ Write production-grade code from the start. Not "prototype first, fix later." Th
 - `/qa` — Full QA pass: reviews all changes, reports findings, then commit/push on approval
 - `/review [file]` — Quick code review of changes (no commit step — use when you just want a second look)
 - `/verify` — Gate before claiming work is done. Run the verification command, then claim the result
+- `/pre-pr-review` — Ship diff to a different-weights OpenAI model (default gpt-4.1) before `/ship`. Needs `OPENAI_API_KEY`; no-ops gracefully without it. Counterweight to Claude's `/qa`; covers same-model review blind spots.
 - `/pr-comments [number]` — Address GitHub PR review comments from Copilot or reviewers
 - `/address-review` — Policy for receiving review feedback: verify before implementing, push back with reasoning, no performative agreement
 - `/debug` — Systematic 4-phase debugging with anti-thrashing guardrails
