@@ -36,26 +36,32 @@ done
 
 # 3. Check for secrets/credentials patterns
 secret_patterns=(
-  'AKIA[0-9A-Z]{16}'                    # AWS Access Key
-  'AIza[0-9A-Za-z\\-_]{35}'             # Google API Key
-  'sk-[0-9a-zA-Z]{48}'                  # OpenAI/Anthropic API Key
-  'ghp_[0-9a-zA-Z]{36}'                 # GitHub Personal Access Token
-  'xox[baprs]-[0-9a-zA-Z-]+'            # Slack Token
-  '-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----'  # Private Key
-  'password\s*=\s*["\x27][^"\x27]{8,}'  # Hardcoded passwords
+  'AKIA[0-9A-Z]{16}'                                 # AWS Access Key
+  'ASIA[0-9A-Z]{16}'                                 # AWS Session Token (STS)
+  'AIza[0-9A-Za-z\\-_]{35}'                          # Google API Key
+  'sk-[0-9a-zA-Z_-]{20,}'                            # OpenAI / Anthropic / similar
+  'ghp_[0-9a-zA-Z]{36}'                              # GitHub PAT (classic)
+  'github_pat_[0-9a-zA-Z_]{22,}'                     # GitHub fine-grained PAT
+  'gho_[0-9a-zA-Z]{36}'                              # GitHub OAuth
+  'xox[baprs]-[0-9a-zA-Z-]+'                         # Slack token
+  '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'  # Private key
+  '"type"[[:space:]]*:[[:space:]]*"service_account"'  # GCP service-account JSON
+  'password\s*=\s*["\x27][^"\x27]{8,}'               # Hardcoded password
 )
 
 for file in $staged_files; do
-  if [ -f "$file" ] && file "$file" | grep -q text; then
-    for pattern in "${secret_patterns[@]}"; do
-      matches=$(grep -nE "$pattern" "$file" 2>/dev/null || true)
-      if [ -n "$matches" ]; then
-        echo -e "${RED}ERROR: Possible secret/credential in $file:${NC}"
-        echo "$matches" | head -3 | sed 's/^/  /'
-        errors=$((errors + 1))
-      fi
-    done
-  fi
+  if [ ! -f "$file" ]; then continue; fi
+  for pattern in "${secret_patterns[@]}"; do
+    # -I skips binary files portably; no dependency on `file(1)` output
+    # format, which classifies JSON as "JSON data" (not "text") on some
+    # platforms and would otherwise skip GCP service-account JSON files.
+    matches=$(grep -InE "$pattern" "$file" 2>/dev/null || true)
+    if [ -n "$matches" ]; then
+      echo -e "${RED}ERROR: Possible secret/credential in $file:${NC}"
+      echo "$matches" | head -3 | sed 's/^/  /'
+      errors=$((errors + 1))
+    fi
+  done
 done
 
 # Restrict source-level scans (debug prints, unsafe patterns) to code files.

@@ -100,22 +100,35 @@ count_diff_lines() {
 }
 
 # --- Fingerprint of current change-set --------------------------------------
-# Uses git's tree SHA of the working index PLUS the list of untracked code
-# files. This catches content edits (not just file-list changes) while staying
-# cheap. Falls back through shasum -> sha256sum -> openssl -> plain concat.
+# Produces a hash that changes when:
+#   - any tracked code file's content changes (staged or unstaged)
+#   - an untracked code file is added or removed
+#   - a tracked file is renamed or deleted
 #
-# The fingerprint is fed into fingerprint state markers, so any change to
-# tracked content OR the set of untracked files produces a new fingerprint.
+# Built from `git diff HEAD --raw` (which lists blob SHAs for both index and
+# working-tree versions) plus the sorted list of untracked code files. This
+# is stateless — no index mutation, no working-tree mutation.
+#
+# Falls back through shasum -> sha256sum -> openssl -> truncated raw text.
 compute_fingerprint() {
-  local tree
-  # Include staged+unstaged by computing a tree from the working index
-  tree=$(git write-tree 2>/dev/null || git rev-parse HEAD^{tree} 2>/dev/null || echo "no-tree")
+  # `git stash create` emits a commit SHA that represents the current
+  # working tree + index WITHOUT modifying anything. The SHA changes
+  # whenever any file content changes. When the working tree is clean,
+  # it returns an empty string — we handle that by falling back to
+  # HEAD's tree SHA so the fingerprint is still well-defined.
+  local stash_sha
+  stash_sha=$(git stash create 2>/dev/null || true)
+  if [ -z "$stash_sha" ]; then
+    stash_sha=$(git rev-parse HEAD^{tree} 2>/dev/null || echo "no-tree")
+  fi
 
-  # Include sorted untracked code files so adding a new file changes the fp
+  # Sorted untracked code files so additions/removals change the fp.
+  # (git stash create includes tracked changes but not untracked files by
+  # default, so we fold them in explicitly.)
   local untracked_concat
-  untracked_concat=$(echo "${CK_UNTRACKED_FILES:-}" | LC_ALL=C sort | tr '\n' '|')
+  untracked_concat=$(printf '%s' "${CK_UNTRACKED_FILES:-}" | LC_ALL=C sort | tr '\n' '|')
 
-  local raw="${tree}:${untracked_concat}"
+  local raw="${stash_sha}||${untracked_concat}"
 
   if command -v shasum >/dev/null 2>&1; then
     printf '%s' "$raw" | shasum -a 256 | cut -d' ' -f1
@@ -124,9 +137,8 @@ compute_fingerprint() {
   elif command -v openssl >/dev/null 2>&1; then
     printf '%s' "$raw" | openssl dgst -sha256 | awk '{print $NF}'
   else
-    # Last-resort: use the raw string. Not a hash but produces a stable,
-    # comparable marker. Length-capped to avoid huge markers.
-    printf '%s' "${raw:0:256}"
+    # Last-resort: raw string. Not a hash but stable and comparable.
+    printf '%s' "${raw:0:512}"
   fi
 }
 

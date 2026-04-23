@@ -74,11 +74,21 @@ Or from a local clone:
 ```
 
 `inject.sh` is idempotent and safe to run multiple times. It:
-- Copies hooks and skills (overwrites — template-managed)
-- Merges `.gitignore` entries (no duplicates)
-- Backs up existing `settings.json` before overwriting
-- Copies `CLAUDE.md.template` (never touches your `CLAUDE.md`)
-- Skips `.git/`, `settings.local.json`, `errors.log`
+- Copies hooks (including `lib/`) and skills — overwrites, they are template-managed
+- **Merges** `.claude/settings.json`: user permissions, env, statusLine and custom hooks are preserved; template hooks are appended per event. Backs up to `settings.json.bak` before writing.
+- Appends missing `.gitignore` entries (no duplicates)
+- Refreshes `CLAUDE.md.template` (never touches your `CLAUDE.md`)
+- Stamps `.claude/KIT_VERSION` so you can see which version is in the project
+- Skips `.git/`, `settings.local.json`, `errors.log`, `CLAUDE.md`
+
+### Updating an injected project
+
+```bash
+/path/to/claude-kit/update-kit.sh           # updates current dir
+/path/to/claude-kit/update-kit.sh /some/project
+```
+
+Equivalent to re-running `inject.sh` — same merge semantics, same guarantees.
 
 ## How It Works
 
@@ -95,6 +105,16 @@ Or from a local clone:
 Python, Java, Scala, TypeScript/JavaScript, Rust, Swift/iOS, Go, Kotlin.
 
 LSP plugins are auto-detected and installed by `/setup` based on project files (e.g., `pyproject.toml` triggers `pyright-lsp`).
+
+## Testing
+
+The hook state machines are covered by a self-contained bash test harness:
+
+```bash
+bash .claude/hooks/tests/run-tests.sh
+```
+
+Ten tests cover: empty/trivial diffs, one-block-per-fingerprint backoff, content-edit fingerprint change, path-traversal containment, the broad-grep false-positive guard in `test-evidence`, prompt-level nudge idempotency. Run before shipping changes to hooks.
 
 ## Philosophy
 
