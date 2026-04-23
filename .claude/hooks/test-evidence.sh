@@ -1,53 +1,38 @@
 #!/usr/bin/env bash
-# Stop hook: on the first stop where code changes exist in a project that has
-# a test runner and no test command has run in this session, block once and
-# request that tests be run. On subsequent stops with the SAME fingerprint,
-# allow — Claude has already been asked. When the fingerprint changes (new
-# code), request again. This mirrors stop-gate's one-block-per-fingerprint
-# pattern to prevent infinite loops if the user explicitly forbids running
-# tests and Claude keeps trying to stop.
-#
-# Skip cases (exit 0 without blocking):
-#   - No code changes
-#   - Diff is trivial (<5 lines, no untracked code files)
-#   - No test runner detected for this project
-#   - A recognizable test command appears in the transcript
-#   - This fingerprint was already requested for test-evidence this session
+# Test-evidence gate: blocks completion when code changes exist in a project
+# with a detectable test runner but no test command ran in this session.
+# Uses the same fingerprint-based one-block backstop as stop-gate so a user
+# who explicitly forbids tests can't trigger an infinite block loop.
 
 set -euo pipefail
 
-cd "$CLAUDE_PROJECT_DIR" 2>/dev/null || exit 0
+cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
 
 input=$(cat)
+session_id_raw=$(json_extract_string "session_id" "$input")
+session_id=$(sanitize_session_id "${session_id_raw:-unknown}")
+transcript_path=$(json_extract_string "transcript_path" "$input")
+state_dir=$(session_state_dir "$session_id")
+marker="$state_dir/test-evidence.fp"
 
-extract_json_string() {
-  echo "$input" | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
-}
+detect_code_changes
 
-session_id=$(extract_json_string "session_id")
-session_id="${session_id:-unknown}"
-transcript_path=$(extract_json_string "transcript_path")
-
-marker="/tmp/claude-test-evidence-${session_id}"
-
-# --- 1. Detect code changes (mirrors stop-gate) ---
-code_extensions='py|java|scala|kt|ts|tsx|js|jsx|rs|swift|go|rb|c|cpp|h|hpp|cs|php|vue|svelte'
-changed_files=$(git diff HEAD --name-only 2>/dev/null | grep -E "\.($code_extensions)$" || true)
-untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "\.($code_extensions)$" || true)
-all_changes="${changed_files}${untracked_files}"
-
-if [ -z "$all_changes" ]; then
-  rm -f "$marker" 2>/dev/null
+if [ -z "${CK_ALL_CHANGES}" ]; then
+  rm -f "$marker" 2>/dev/null || true
   exit 0
 fi
 
-diff_lines=$(git diff HEAD --stat 2>/dev/null | tail -1 | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | grep -oE '[0-9]+' | paste -sd+ - | bc 2>/dev/null || echo "0")
-if [ "${diff_lines:-0}" -lt 5 ] && [ -z "$untracked_files" ]; then
-  rm -f "$marker" 2>/dev/null
+diff_lines=$(count_diff_lines)
+if [ "${diff_lines:-0}" -lt 5 ] && [ -z "${CK_UNTRACKED_FILES}" ]; then
+  rm -f "$marker" 2>/dev/null || true
   exit 0
 fi
 
-# --- 2. Detect a test runner for this project ---
+# --- Detect a test runner for this project ---
 has_tests=false
 test_command_hint=""
 
@@ -77,45 +62,31 @@ if [ "$has_tests" = false ]; then
   exit 0
 fi
 
-# --- 3. Check transcript for a test run in this session ---
+# --- Check transcript for a test command this session ---
 if [ -z "$transcript_path" ] || [ ! -f "$transcript_path" ]; then
-  # Can't verify — be conservative, skip rather than false-block
+  # Can't verify — skip rather than false-block
   exit 0
 fi
 
-# Recognizable test invocations. Intentionally broad; false-positives here just
-# mean "Claude satisfied the gate with something test-ish," which is fine.
-if grep -qE '(pytest|npm (run )?test|yarn test|pnpm test|bun test|cargo test|go test|sbt( |/)test|mvn( |/)test|gradle(w)?( |/)test|swift test|jest|vitest|mocha|rspec|rake test|make test|\./test\.sh|\./run_tests\.sh|tox)' "$transcript_path" 2>/dev/null; then
-  rm -f "$marker" 2>/dev/null
+# Constrain match to tool-command shapes (JSON `"command":"...pytest..."`) and
+# shell-ish invocations. Avoids matching the word "pytest" in plain prose.
+if grep -qE '"command"[[:space:]]*:[[:space:]]*"[^"]*(pytest|npm (run )?test|yarn test|pnpm test|bun test|cargo test|go test|sbt( |/)test|mvn( |/)test|gradle(w)?( |/)test|swift test|jest|vitest|mocha|rspec|rake test|make test|\./test\.sh|\./run_tests\.sh|tox)' "$transcript_path" 2>/dev/null; then
+  rm -f "$marker" 2>/dev/null || true
   exit 0
 fi
 
-# --- 4. Fingerprint-based one-block backstop ---
-# Prevents infinite loop when the user forbids tests: ask once per change-set,
-# then allow. New code (different fingerprint) re-requests.
-if command -v shasum &>/dev/null; then
-  current_fingerprint=$(echo "$all_changes" | sort | shasum -a 256 | cut -d' ' -f1)
-elif command -v sha256sum &>/dev/null; then
-  current_fingerprint=$(echo "$all_changes" | sort | sha256sum | cut -d' ' -f1)
-else
-  current_fingerprint=$(echo "$all_changes" | sort | tr '\n' '|')
-fi
+# --- Fingerprint-based one-block backstop ---
+current_fp=$(compute_fingerprint)
 
 if [ -f "$marker" ]; then
   stored=$(cat "$marker" 2>/dev/null || echo "")
-  if [ "$current_fingerprint" = "$stored" ]; then
+  if [ "$current_fp" = "$stored" ]; then
     exit 0
   fi
 fi
 
-echo "$current_fingerprint" > "$marker"
+echo "$current_fp" > "$marker"
 
-# --- 5. Block ---
-file_count=$(echo "$all_changes" | wc -l | tr -d ' ')
-
-# Build reason as a plain string to avoid heredoc quoting pitfalls.
-reason="Code changes in $file_count file(s) (~${diff_lines:-?} lines), but no test command was run in this session. Run the test suite (e.g., $test_command_hint) and confirm it passes before completing. If tests genuinely do not apply to this change, say so explicitly and the user will decide."
-
-# Emit JSON; escape double quotes in the reason just in case.
-escaped_reason=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
-printf '{"decision": "block", "reason": "%s"}\n' "$escaped_reason"
+file_count=$(echo "${CK_ALL_CHANGES}" | grep -c . || echo 0)
+reason="Code changes in $file_count file(s) (~${diff_lines} lines), but no test command was run in this session. Run the test suite (e.g., $test_command_hint) and confirm it passes before completing. If tests genuinely do not apply to this change, say so explicitly and the user will decide."
+emit_block "$reason"

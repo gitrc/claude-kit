@@ -1,43 +1,44 @@
 #!/usr/bin/env bash
-# Lightweight context monitor: tracks turns and transcript size.
-# Nudges user to /compact when context is getting large.
-# Cost: one file read + one counter increment per tool call. Zero tokens until threshold.
+# Context monitor: tracks tool calls per session and transcript size.
+# Nudges the user to /compact when context is getting heavy.
+# Cost: one file read + one counter increment per tool call.
 set -euo pipefail
 
+cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
+
 input=$(cat)
+session_id_raw=$(json_extract_string "session_id" "$input")
+session_id=$(sanitize_session_id "${session_id_raw:-unknown}")
+transcript_path=$(json_extract_string "transcript_path" "$input")
+state_dir=$(session_state_dir "$session_id")
+counter_file="$state_dir/turns"
 
-# Safe JSON extraction — no eval, no python3 dependency
-extract_json_string() {
-  echo "$input" | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
-}
-
-session_id=$(extract_json_string "session_id")
-session_id="${session_id:-unknown}"
-transcript_path=$(extract_json_string "transcript_path")
-
-counter_file="/tmp/claude-turns-${session_id}"
-
-# Increment turn counter
+# Increment turn counter. Defend against corrupted counter files (non-numeric)
+# by resetting silently rather than exploding under set -e.
+turns=1
 if [ -f "$counter_file" ]; then
-  turns=$(( $(cat "$counter_file") + 1 ))
-else
-  turns=1
+  prev=$(cat "$counter_file" 2>/dev/null || echo "")
+  if [[ "$prev" =~ ^[0-9]+$ ]]; then
+    turns=$(( prev + 1 ))
+  fi
 fi
 echo "$turns" > "$counter_file"
 
-# Only check every 20 turns to minimize overhead
+# Only check every 20 turns to minimize overhead.
 if (( turns % 20 != 0 )); then
   exit 0
 fi
 
-# Check transcript size if path available
 transcript_kb=0
 if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
   transcript_bytes=$(wc -c < "$transcript_path" 2>/dev/null || echo 0)
   transcript_kb=$(( transcript_bytes / 1024 ))
 fi
 
-# Nudge thresholds
 if (( transcript_kb > 800 )); then
   cat <<EOF
 {
