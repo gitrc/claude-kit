@@ -74,11 +74,12 @@ if [ "$TEMPLATE_DIR" = "$TARGET_DIR" ]; then
 fi
 
 # --- Copy .claude/hooks/ (overwrite — template-managed) ---
-echo -e "  ${GREEN}✓${NC} Copying .claude/hooks/ (including lib/)"
-mkdir -p "$TARGET_DIR/.claude/hooks/lib"
+echo -e "  ${GREEN}✓${NC} Copying .claude/hooks/ (including lib/ and tests/)"
+mkdir -p "$TARGET_DIR/.claude/hooks/lib" "$TARGET_DIR/.claude/hooks/tests"
 cp "$TEMPLATE_DIR/.claude/hooks/"*.sh "$TARGET_DIR/.claude/hooks/"
 cp "$TEMPLATE_DIR/.claude/hooks/lib/"*.sh "$TARGET_DIR/.claude/hooks/lib/"
-chmod +x "$TARGET_DIR/.claude/hooks/"*.sh
+cp "$TEMPLATE_DIR/.claude/hooks/tests/"*.sh "$TARGET_DIR/.claude/hooks/tests/"
+chmod +x "$TARGET_DIR/.claude/hooks/"*.sh "$TARGET_DIR/.claude/hooks/tests/"*.sh
 
 # --- Copy .claude/skills/ (overwrite — template-managed) ---
 echo -e "  ${GREEN}✓${NC} Copying .claude/skills/"
