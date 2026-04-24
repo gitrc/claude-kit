@@ -111,24 +111,22 @@ count_diff_lines() {
 #
 # Falls back through shasum -> sha256sum -> openssl -> truncated raw text.
 compute_fingerprint() {
-  # `git stash create` emits a commit SHA that represents the current
-  # working tree + index WITHOUT modifying anything. The SHA changes
-  # whenever any file content changes. When the working tree is clean,
-  # it returns an empty string — we handle that by falling back to
-  # HEAD's tree SHA so the fingerprint is still well-defined.
-  local stash_sha
-  stash_sha=$(git stash create 2>/dev/null || true)
-  if [ -z "$stash_sha" ]; then
-    stash_sha=$(git rev-parse HEAD^{tree} 2>/dev/null || echo "no-tree")
-  fi
+  # Hash the content of `git diff HEAD` plus the sorted untracked file
+  # list. Any file edit (staged or unstaged) changes the diff output;
+  # adding/removing an untracked file changes the list. Both are
+  # deterministic functions of the working-tree state.
+  #
+  # Earlier iteration used `git stash create` which embeds a timestamp in
+  # the resulting commit SHA — two calls >1s apart produced different
+  # fingerprints for identical content, breaking the one-block-per-
+  # change-set invariant (caught by the hook test harness).
+  local diff_content
+  diff_content=$(git diff HEAD 2>/dev/null || true)
 
-  # Sorted untracked code files so additions/removals change the fp.
-  # (git stash create includes tracked changes but not untracked files by
-  # default, so we fold them in explicitly.)
   local untracked_concat
   untracked_concat=$(printf '%s' "${CK_UNTRACKED_FILES:-}" | LC_ALL=C sort | tr '\n' '|')
 
-  local raw="${stash_sha}||${untracked_concat}"
+  local raw="${diff_content}||${untracked_concat}"
 
   if command -v shasum >/dev/null 2>&1; then
     printf '%s' "$raw" | shasum -a 256 | cut -d' ' -f1

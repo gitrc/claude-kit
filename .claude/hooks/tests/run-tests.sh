@@ -99,8 +99,13 @@ test_stop_gate_blocks_then_allows() {
   local o1 o2
   o1=$(run_hook "$STOP_GATE" '{"session_id":"s3"}' "$dir")
   echo "$o1" | grep -q '"decision": "block"' || { fail "stop-gate: first stop blocks" "no block JSON: $o1"; rm -rf "$dir"; return; }
+  # Sleep explicitly to cross a 1-second boundary. Catches fingerprint
+  # implementations that embed a timestamp (e.g. earlier iterations using
+  # `git stash create` which returned different commit SHAs across
+  # seconds for identical content).
+  sleep 1.1
   o2=$(run_hook "$STOP_GATE" '{"session_id":"s3"}' "$dir")
-  if [ -z "$o2" ]; then pass "stop-gate: first blocks, second allows (no loop)"; else fail "stop-gate: second stop allow" "got output: $o2"; fi
+  if [ -z "$o2" ]; then pass "stop-gate: first blocks, second allows (time-invariant)"; else fail "stop-gate: second stop allow" "got output: $o2"; fi
   rm -rf "$dir"
 }
 
