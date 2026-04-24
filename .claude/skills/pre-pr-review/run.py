@@ -215,6 +215,19 @@ def main() -> int:
 
     spec = resolve_diff_spec(args.diff_spec, repo_root)
     diff = fetch_diff(spec, repo_root)
+
+    # Fallback: if the default branch-vs-main spec is empty AND the caller
+    # didn't pass an explicit --diff-spec, try the working-tree diff
+    # (uncommitted changes vs HEAD). Catches the "WIP review before first
+    # commit on a branch" case that would otherwise report empty and skip.
+    if not diff.strip() and args.diff_spec is None:
+        wip_diff = fetch_diff("HEAD", repo_root)
+        if wip_diff.strip():
+            print(f"pre-pr-review: no commits past main; reviewing uncommitted working tree instead.",
+                  file=sys.stderr)
+            spec = "HEAD (working tree)"
+            diff = wip_diff
+
     if not diff.strip():
         print(f"pre-pr-review: diff '{spec}' is empty; nothing to review.")
         return 0
