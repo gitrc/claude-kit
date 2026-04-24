@@ -70,7 +70,23 @@ Write production-grade code from the start. Not "prototype first, fix later." Th
 - **Structured logging always.** Use the language's standard structured logger (Python: `logging` with JSON formatter or `structlog`, Java/Scala: SLF4J + Logback, TypeScript: `pino` or `winston`, Rust: `tracing`, Swift: `os.log`). Never `print()`, `console.log()`, or `println()` for operational output. Debug prints must be removed before completion.
 - **Configuration via environment.** Never hardcode URLs, ports, credentials, feature flags, or environment-specific values. Use environment variables or config files. Reference `.env.example` for documentation.
 - **Explicit dependencies.** Always declare dependencies in the project's manifest (requirements.txt/pyproject.toml, package.json, Cargo.toml, build.sbt, Package.swift). Never rely on globally installed packages.
-- **Python: ALWAYS use a virtual environment.** Never run `pip install`, `python`, `pytest`, or any Python command outside an activated venv. If no venv exists, create one first (`python3 -m venv .venv && source .venv/bin/activate`). Activate the venv before EVERY Python command in EVERY Bash call — do not assume it persists between tool calls. Never use `--break-system-packages`. This is NON-NEGOTIABLE.
+- **Python: isolate from the system interpreter.** Non-negotiable. The principle is "no Python command ever runs against the system interpreter" — the *tool* is whichever the project already uses. Detect in this order before running anything:
+  - **uv** (`uv.lock` or `[tool.uv]` in `pyproject.toml`): `uv run pytest`, `uv sync`, `uv add <pkg>`. No manual activation needed — `uv run` wraps each call.
+  - **poetry** (`poetry.lock` or `[tool.poetry]`): `poetry run pytest`, `poetry install`, `poetry add <pkg>`.
+  - **pipenv** (`Pipfile`): `pipenv run pytest`, `pipenv install`.
+  - **conda** (`environment.yml` or `.conda/`): `conda activate <env>` once per Bash call, then standard commands.
+  - **stdlib venv** (existing `.venv/` or `requirements.txt` with no other marker): `source .venv/bin/activate` per Bash call.
+
+  If none of those exist and you're starting fresh, ASK the user which tool they want before creating anything — don't default to stdlib venv when the team may have standardized on uv or poetry. If the user defers, prefer `uv init` (fast, modern, zero-config).
+
+  Activation does not persist between Bash tool calls. Either prepend activation to every Python invocation, OR use a wrapper like `uv run` / `poetry run` that isolates each call.
+
+  Never:
+  - `pip install` against system Python
+  - `pip install --break-system-packages`
+  - `pip install --user` (same contamination, different hiding place)
+  - `sudo pip install` — under any circumstance
+  - `python` / `pytest` / any Python command without first resolving the isolation tool
 - **Stateless processes.** Don't store state in local files or in-memory globals that won't survive a restart. Use external stores (DB, cache, object storage).
 - **Separate concerns.** Entry point, business logic, and I/O adapters should be distinct. A CLI script still deserves a clean boundary between "parse args" and "do work."
 - **Error handling with context.** Catch errors at boundaries, add context, propagate or log. Never silently swallow exceptions. Never use bare `except:` / `catch(e)` without re-raising or logging.

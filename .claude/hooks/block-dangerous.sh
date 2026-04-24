@@ -68,15 +68,17 @@ for pattern in "${dangerous_patterns[@]}" "${pipe_patterns[@]}"; do
   fi
 done
 
-# Block pip install without venv — warn instead of block, since we can't detect
-# an already-active venv from a hook subprocess ($VIRTUAL_ENV isn't visible here)
+# Warn on bare pip install / python commands that aren't clearly inside an
+# isolation tool's context. The hook subprocess can't see $VIRTUAL_ENV, so we
+# pattern-match on the command text for known-good wrappers (uv, poetry,
+# pipenv, pipx, conda) and activation forms (.venv/activate, --target, etc.).
 if echo "$command" | grep -qiE '^\s*pip[3]?\s+install|^\s*python[3]?\s+-m\s+pip\s+install'; then
-  if ! echo "$command" | grep -qiE 'venv|virtualenv|\.venv|source.*activate|conda|--target'; then
+  if ! echo "$command" | grep -qiE 'venv|virtualenv|\.venv|source.*activate|conda|--target|\buv\b|\bpoetry\b|\bpipenv\b|\bpipx\b'; then
     cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
-    "additionalContext": "WARNING: pip install detected. Ensure a virtual environment is active. If no venv exists, create one first: python3 -m venv .venv && source .venv/bin/activate && pip install ... Never install packages into the system Python."
+    "additionalContext": "WARNING: bare 'pip install' detected. Resolve the project's isolation tool first: uv (uv add / uv pip install), poetry (poetry add), pipenv, conda, or stdlib venv (source .venv/bin/activate). Never install into system Python. If starting fresh, ask the user which tool to use."
   }
 }
 EOF
