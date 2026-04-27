@@ -82,14 +82,29 @@ Or from a local clone:
 - Stamps `.claude/KIT_VERSION` so you can see which version is in the project
 - Skips `.git/`, `settings.local.json`, `errors.log`, `CLAUDE.md`
 
-### Updating an injected project
+### Upgrading an injected project
 
+The same `inject.sh` script handles upgrades — it detects an existing install via `.claude/KIT_VERSION` and switches to upgrade mode. Existing user customizations in `settings.json` and `CLAUDE.md` are preserved; hooks, skills, and `CLAUDE.md.template` are refreshed. Three flows depending on what you want:
+
+**Check what would change without writing anything:**
 ```bash
-/path/to/claude-kit/update-kit.sh           # updates current dir
-/path/to/claude-kit/update-kit.sh /some/project
+/path/to/claude-kit/inject.sh --check ~/projects/my-app
+```
+Prints "v0.2.0 → v0.3.0" plus the relevant CHANGELOG entries, then exits.
+
+**Apply the upgrade:**
+```bash
+git -C /path/to/claude-kit pull        # get the latest template
+/path/to/claude-kit/inject.sh ~/projects/my-app
+```
+Or use the friendlier wrapper that does the same thing:
+```bash
+/path/to/claude-kit/update-kit.sh ~/projects/my-app
 ```
 
-Equivalent to re-running `inject.sh` — same merge semantics, same guarantees.
+**Re-run `/setup` only if needed.** Most upgrades don't require it. If `CLAUDE.md.template` gained rules you want burned into persistent memory, re-run `/setup` once after the upgrade. The CHANGELOG flags releases that need this.
+
+Read [CHANGELOG.md](CHANGELOG.md) before upgrading across major rule changes — burned-memory file renames (e.g. 0.3.0) need a one-time `/setup` re-run.
 
 ## How It Works
 

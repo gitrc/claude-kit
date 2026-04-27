@@ -27,14 +27,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE_DIR="$SCRIPT_DIR"
 KIT_VERSION=$(cat "$TEMPLATE_DIR/VERSION" 2>/dev/null || echo "0.0.0")
 
-TARGET_DIR="${1:-}"
+# --- Parse args ---
+CHECK_ONLY=0
+TARGET_DIR=""
+for arg in "$@"; do
+  case "$arg" in
+    --check) CHECK_ONLY=1 ;;
+    -h|--help)
+      echo "Usage: ./inject.sh [--check] <target-directory>"
+      echo ""
+      echo "  --check    Show version comparison without modifying files."
+      echo ""
+      echo "  Examples:"
+      echo "    ./inject.sh ~/projects/my-app           # fresh install or upgrade"
+      echo "    ./inject.sh --check ~/projects/my-app   # show installed vs latest"
+      echo "    ./inject.sh .                           # inject into current dir"
+      exit 0
+      ;;
+    *) TARGET_DIR="$arg" ;;
+  esac
+done
 
 if [ -z "$TARGET_DIR" ]; then
-  echo -e "${RED}Usage: ./inject.sh <target-directory>${NC}"
-  echo ""
-  echo "  Examples:"
-  echo "    ./inject.sh ~/projects/my-app"
-  echo "    ./inject.sh ."
+  echo -e "${RED}Usage: ./inject.sh [--check] <target-directory>${NC}"
+  echo "  Run with --help for full options."
   exit 1
 fi
 
@@ -62,11 +78,38 @@ echo -e "${DIM}  Target:    $TARGET_DIR${NC}"
 PRIOR_VERSION=""
 if [ -f "$TARGET_DIR/.claude/KIT_VERSION" ]; then
   PRIOR_VERSION=$(cat "$TARGET_DIR/.claude/KIT_VERSION" 2>/dev/null || echo "")
-  echo -e "${DIM}  Mode:      update (was v${PRIOR_VERSION:-unknown})${NC}"
+  if [ "$PRIOR_VERSION" = "$KIT_VERSION" ]; then
+    echo -e "${DIM}  Mode:      already at v${KIT_VERSION} (re-injecting)${NC}"
+  else
+    echo -e "${DIM}  Mode:      upgrade ${PRIOR_VERSION:-unknown} → ${KIT_VERSION}${NC}"
+  fi
 else
   echo -e "${DIM}  Mode:      fresh install${NC}"
 fi
 echo ""
+
+# --check mode: show version comparison + relevant changelog entries, then exit
+if [ $CHECK_ONLY -eq 1 ]; then
+  if [ -z "$PRIOR_VERSION" ]; then
+    echo "  No claude-kit installed at $TARGET_DIR. Run without --check to install."
+  elif [ "$PRIOR_VERSION" = "$KIT_VERSION" ]; then
+    echo "  Up to date. (v$KIT_VERSION)"
+  else
+    echo -e "  ${YELLOW}Update available:${NC} v${PRIOR_VERSION} → v${KIT_VERSION}"
+    if [ -f "$TEMPLATE_DIR/CHANGELOG.md" ]; then
+      echo ""
+      echo "  Changes since your version (from CHANGELOG.md):"
+      # Print sections newer than PRIOR_VERSION, stop at PRIOR_VERSION header
+      awk -v prior="## $PRIOR_VERSION " '
+        /^## [0-9]/ { if (started && index($0, prior) == 1) exit; started=1 }
+        started { print "    " $0 }
+      ' "$TEMPLATE_DIR/CHANGELOG.md" | head -60
+    fi
+    echo ""
+    echo "  Run without --check to apply."
+  fi
+  exit 0
+fi
 
 if [ "$TEMPLATE_DIR" = "$TARGET_DIR" ]; then
   echo -e "${RED}ERROR: Target is the same as the template directory.${NC}"
@@ -187,8 +230,13 @@ if [ -z "$PRIOR_VERSION" ]; then
   echo -e "    ${CYAN}claude${NC}"
   echo -e "    Then run ${BOLD}/setup${NC} to activate git hooks, install LSP plugins,"
   echo -e "    and burn rules into memory."
+elif [ "$PRIOR_VERSION" = "$KIT_VERSION" ]; then
+  echo -e "  Re-injected at v${KIT_VERSION} (no version change)."
 else
-  echo -e "  Updated from v${PRIOR_VERSION} → v${KIT_VERSION}."
-  echo -e "  No /setup re-run needed unless CLAUDE.md.template has new rules you want burned to memory."
+  echo -e "  Upgraded from v${PRIOR_VERSION} → v${KIT_VERSION}."
+  if [ -f "$TEMPLATE_DIR/CHANGELOG.md" ]; then
+    echo -e "  See ${CYAN}$TEMPLATE_DIR/CHANGELOG.md${NC} for what changed."
+  fi
+  echo -e "  Re-run ${BOLD}/setup${NC} only if CLAUDE.md.template gained rules you want burned to memory."
 fi
 echo ""
