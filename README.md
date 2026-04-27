@@ -104,7 +104,7 @@ Or use the friendlier wrapper that does the same thing:
 
 **Re-run `/setup` only if needed.** Most upgrades don't require it. If `CLAUDE.md.template` gained rules you want burned into persistent memory, re-run `/setup` once after the upgrade. The CHANGELOG flags releases that need this.
 
-Read [CHANGELOG.md](CHANGELOG.md) before upgrading across major rule changes — burned-memory file renames (e.g. 0.3.0) need a one-time `/setup` re-run.
+Read [CHANGELOG.md](CHANGELOG.md) for what changed. Most upgrades — including 0.3.0's burned-memory rename — are graceful: the new CLAUDE.md takes precedence on actionable rules, so Claude does the right thing even before any cleanup. Re-running `/setup` after a memory-rename release is housekeeping, not a hard requirement.
 
 ## How It Works
 

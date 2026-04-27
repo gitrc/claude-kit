@@ -4,10 +4,10 @@ Notable changes per release. Run `/path/to/claude-kit/inject.sh <project>` (or `
 
 ## 0.3.0 — 2026-04-27
 
-**Breaking-ish (memory rename):** the burned-memory file from `/setup` was renamed `feedback_python_venv_required.md` → `feedback_python_isolation_required.md`. Re-run `/setup` once after upgrading, or delete the old file from `~/.claude/projects/<project>/memory/` manually. The rule is otherwise active from CLAUDE.md immediately.
-
 - Python rule rewritten as principle ("never run against the system interpreter") with detection-order enumeration of acceptable tools: uv, poetry, pipenv, conda, stdlib venv. Fresh projects: Claude asks the user which tool to adopt instead of auto-creating a `.venv`.
 - `block-dangerous.sh` accepts `uv`, `poetry`, `pipenv`, `pipx` as valid wrappers around `pip install` — no spurious warnings on `uv pip install` or `poetry add`. Bare `pip install` still warns.
+
+**Optional cleanup:** the burned-memory file from `/setup` was renamed `feedback_python_venv_required.md` → `feedback_python_isolation_required.md`. **Migration is graceful** — verified via e2e: stale memory + new CLAUDE.md → Claude correctly uses the project's tool (e.g. `uv run pytest`) anyway. Re-running `/setup` is cleanup, not strictly required. To clean up, either re-run `/setup` once after upgrading or delete the old file from `~/.claude/projects/<project>/memory/feedback_python_venv_required.md` manually.
 
 ## 0.2.2 — 2026-04-24
 
