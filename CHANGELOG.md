@@ -2,6 +2,16 @@
 
 Notable changes per release. Run `/path/to/claude-kit/inject.sh <project>` (or `update-kit.sh`) to pick up a new version. inject.sh is idempotent and merges; existing user customizations in `settings.json` and `CLAUDE.md` are preserved.
 
+## 0.3.1 — 2026-04-28
+
+- Stop-gate reason text is now prescriptive about which skill to invoke. Old: "review the changes." New: "Run /qa to fan out three parallel reviewers..." with a fallback path if `/qa` is unavailable, and a conditional "Then run /pre-pr-review before shipping" suffix when `OPENAI_API_KEY` is set. Naming the slash command (instead of describing the action) is what reliably triggers Skill invocation in the model.
+- Stop-gate and test-evidence markers are now per-file pair sets (`<path>\t<content-hash>` lines) instead of a single whole-tree fingerprint. The marker accumulates the union of all blocked-on artifacts; the gate fires only on pairs not already in that union. Effects:
+  - **Shrinking change-sets allow.** Discarding a file (e.g. `git restore -- foo.py`) used to flip the fingerprint and re-block on a smaller set of *already-reviewed* work. Now `current ⊆ stored` is recognized and the gate stays quiet.
+  - **In-place edits still re-block** (new content-hash → new pair), so the shrink fix doesn't open a hole for unreviewed edits.
+  - **Deletions are reviewed once.** Tracked files removed from the working tree emit a `DELETED` sentinel pair so the deletion itself is an artifact that gets blocked-on once, then doesn't re-fire.
+- Untracked files inside `.claude/` are now excluded from change detection. Kit scaffolding from a fresh `inject.sh` (e.g. `.claude/skills/pre-pr-review/run.py` before commit) no longer trips the kit's own gates. Tracked changes inside `.claude/` are still detected, so kit self-development still triggers reviews.
+- Test harness: 13 tests (was 10). New cases cover shrink-allows, shrink+in-place-edit re-blocks (catches the size-compare false-negative), and untracked-`.claude/`-exclusion.
+
 ## 0.3.0 — 2026-04-27
 
 - Python rule rewritten as principle ("never run against the system interpreter") with detection-order enumeration of acceptable tools: uv, poetry, pipenv, conda, stdlib venv. Fresh projects: Claude asks the user which tool to adopt instead of auto-creating a `.venv`.

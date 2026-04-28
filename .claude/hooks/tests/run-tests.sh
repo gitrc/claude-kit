@@ -124,6 +124,61 @@ test_stop_gate_content_edit_reblocks() {
   rm -rf "$dir"
 }
 
+test_stop_gate_shrink_allows() {
+  # Block on a multi-file change-set, then discard one of the files. The
+  # remaining state is a strict subset of what was already blocked-on, so
+  # the gate must NOT re-fire (set-union marker).
+  local dir=/tmp/ckit-t-$$-shrink
+  new_project "$dir" 8
+  echo "def g(): pass" > "$dir/extra.py"
+  wipe_session ssk
+  local o1
+  o1=$(run_hook "$STOP_GATE" '{"session_id":"ssk"}' "$dir")
+  echo "$o1" | grep -q '"decision": "block"' || { fail "stop-gate: shrink first-block" "no initial block: $o1"; rm -rf "$dir"; return; }
+  rm "$dir/extra.py"
+  local o2
+  o2=$(run_hook "$STOP_GATE" '{"session_id":"ssk"}' "$dir")
+  if [ -z "$o2" ]; then pass "stop-gate: shrink (current ⊆ stored) → allow"; else fail "stop-gate: shrink → allow" "got block on shrink: $o2"; fi
+  rm -rf "$dir"
+}
+
+test_stop_gate_shrink_with_inplace_edit_reblocks() {
+  # Discarding one file AND editing another in place: the edited file's
+  # new content-hash is NOT in the stored marker, so the gate must
+  # re-block. Catches the false-negative of a naive size-compare shrink fix.
+  local dir=/tmp/ckit-t-$$-shrink-edit
+  new_project "$dir" 8
+  echo "def g(): pass" > "$dir/extra.py"
+  wipe_session sse
+  run_hook "$STOP_GATE" '{"session_id":"sse"}' "$dir" >/dev/null
+  rm "$dir/extra.py"
+  echo "# new line edits app.py in place" >> "$dir/app.py"
+  local o
+  o=$(run_hook "$STOP_GATE" '{"session_id":"sse"}' "$dir")
+  if echo "$o" | grep -q '"decision": "block"'; then pass "stop-gate: shrink + in-place edit → re-blocks"; else fail "stop-gate: shrink+edit re-block" "missed in-place edit on shrink: $o"; fi
+  rm -rf "$dir"
+}
+
+test_stop_gate_excludes_untracked_dotclaude() {
+  # Untracked code files inside .claude/ are kit scaffolding (post-inject,
+  # pre-commit). They must NOT trip the kit's own gate when they're the
+  # only changes.
+  local dir=/tmp/ckit-t-$$-claude
+  rm -rf "$dir"
+  mkdir -p "$dir/.claude/skills/foo"
+  cd "$dir"
+  git init -q -b main
+  git config user.email t@t.local
+  git config user.name test
+  echo "x" > seed && git add seed && git commit -q -m init
+  echo "def f(): pass" > .claude/skills/foo/run.py
+  wipe_session sex
+  local o
+  o=$(run_hook "$STOP_GATE" '{"session_id":"sex"}' "$dir")
+  if [ -z "$o" ]; then pass "stop-gate: untracked .claude/ files do NOT trip the gate"; else fail "stop-gate: .claude/ exclusion" "blocked on .claude-only change: $o"; fi
+  rm -rf "$dir"
+}
+
 test_stop_gate_sanitizes_session_id() {
   # Path-traversal session_id must not escape the cache dir.
   local dir=/tmp/ckit-t-$$-sid
@@ -242,6 +297,9 @@ test_stop_gate_empty_diff
 test_stop_gate_trivial_diff
 test_stop_gate_blocks_then_allows
 test_stop_gate_content_edit_reblocks
+test_stop_gate_shrink_allows
+test_stop_gate_shrink_with_inplace_edit_reblocks
+test_stop_gate_excludes_untracked_dotclaude
 test_stop_gate_sanitizes_session_id
 test_test_evidence_broad_grep_suppressed_in_prose
 test_test_evidence_tool_command_satisfies

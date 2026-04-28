@@ -75,7 +75,13 @@ detect_code_changes() {
   # Intentionally separate variables so callers can iterate cleanly.
   local changed untracked
   changed=$(git diff HEAD --name-only 2>/dev/null | grep -E "\.($CK_CODE_EXTENSIONS)$" || true)
-  untracked=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "\.($CK_CODE_EXTENSIONS)$" || true)
+  # Exclude untracked .claude/* — kit scaffolding (post-inject, pre-commit)
+  # shouldn't trip the kit's own gates. Tracked changes inside .claude/ are
+  # left alone so kit self-development still triggers reviews.
+  untracked=$(git ls-files --others --exclude-standard 2>/dev/null \
+    | grep -E "\.($CK_CODE_EXTENSIONS)$" \
+    | grep -v -E '^\.claude/' \
+    || true)
 
   # Export via environment so the caller can read them directly.
   export CK_CHANGED_FILES="$changed"
@@ -99,45 +105,92 @@ count_diff_lines() {
   ' 2>/dev/null || echo 0
 }
 
-# --- Fingerprint of current change-set --------------------------------------
-# Produces a hash that changes when:
-#   - any tracked code file's content changes (staged or unstaged)
-#   - an untracked code file is added or removed
-#   - a tracked file is renamed or deleted
-#
-# Built from `git diff HEAD --raw` (which lists blob SHAs for both index and
-# working-tree versions) plus the sorted list of untracked code files. This
-# is stateless — no index mutation, no working-tree mutation.
-#
-# Falls back through shasum -> sha256sum -> openssl -> truncated raw text.
-compute_fingerprint() {
-  # Hash the content of `git diff HEAD` plus the sorted untracked file
-  # list. Any file edit (staged or unstaged) changes the diff output;
-  # adding/removing an untracked file changes the list. Both are
-  # deterministic functions of the working-tree state.
-  #
-  # Earlier iteration used `git stash create` which embeds a timestamp in
-  # the resulting commit SHA — two calls >1s apart produced different
-  # fingerprints for identical content, breaking the one-block-per-
-  # change-set invariant (caught by the hook test harness).
-  local diff_content
-  diff_content=$(git diff HEAD 2>/dev/null || true)
-
-  local untracked_concat
-  untracked_concat=$(printf '%s' "${CK_UNTRACKED_FILES:-}" | LC_ALL=C sort | tr '\n' '|')
-
-  local raw="${diff_content}||${untracked_concat}"
-
+# --- Hash a single file's content (portable) --------------------------------
+# Falls back through shasum -> sha256sum -> openssl -> size+mtime sentinel.
+# Emits hex string on stdout. Empty output on error (caller should handle).
+_hash_content() {
+  local path="$1"
   if command -v shasum >/dev/null 2>&1; then
-    printf '%s' "$raw" | shasum -a 256 | cut -d' ' -f1
+    shasum -a 256 "$path" 2>/dev/null | cut -d' ' -f1
   elif command -v sha256sum >/dev/null 2>&1; then
-    printf '%s' "$raw" | sha256sum | cut -d' ' -f1
+    sha256sum "$path" 2>/dev/null | cut -d' ' -f1
   elif command -v openssl >/dev/null 2>&1; then
-    printf '%s' "$raw" | openssl dgst -sha256 | awk '{print $NF}'
+    openssl dgst -sha256 "$path" 2>/dev/null | awk '{print $NF}'
   else
-    # Last-resort: raw string. Not a hash but stable and comparable.
-    printf '%s' "${raw:0:512}"
+    # Last-resort: byte count + mtime. Not collision-resistant but
+    # locally stable enough for change detection.
+    local size mt
+    size=$(wc -c <"$path" 2>/dev/null | tr -d ' ')
+    mt=$(stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null)
+    printf 'sz%s-mt%s' "${size:-0}" "${mt:-0}"
   fi
+}
+
+# --- Per-file pair set ------------------------------------------------------
+# Emits one line per (path, content-hash) pair for the current dirty code
+# state. Deleted tracked files emit "<path>\tDELETED" so the deletion is
+# itself an artifact that gets reviewed once.
+#
+# Used by gates that need to know WHICH artifacts have already been blocked
+# on, so a strictly-shrinking change-set (current ⊆ stored) skips re-blocking.
+#
+# Caller must have run detect_code_changes first.
+compute_pair_set() {
+  local f h
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if [ -f "$f" ]; then
+      h=$(_hash_content "$f" || true)
+      [ -z "$h" ] && continue
+      printf '%s\t%s\n' "$f" "$h"
+    else
+      printf '%s\tDELETED\n' "$f"
+    fi
+  done <<< "${CK_CHANGED_FILES:-}"
+
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ ! -f "$f" ] && continue
+    h=$(_hash_content "$f" || true)
+    [ -z "$h" ] && continue
+    printf '%s\t%s\n' "$f" "$h"
+  done <<< "${CK_UNTRACKED_FILES:-}"
+}
+
+# --- Set-union marker logic -------------------------------------------------
+# Returns 0 if the current pair set is a (non-strict) subset of what's
+# already in the marker — meaning every artifact has been blocked on before
+# and we should allow. Returns 1 if there's at least one unreviewed pair,
+# in which case the caller should block; the marker is updated to
+# stored ∪ current before returning.
+#
+# This is the loop-proof + shrink-safe replacement for whole-tree fingerprint
+# compare. Adding work re-blocks. Discarding work allows. Editing in place
+# re-blocks (new content-hash → new pair).
+#
+# Caller must have run detect_code_changes first.
+marker_check_and_update() {
+  local marker="$1"
+  local current_pairs stored_pairs new_pairs
+  current_pairs=$(compute_pair_set | LC_ALL=C sort -u)
+  if [ -z "$current_pairs" ]; then
+    return 0
+  fi
+  stored_pairs=""
+  if [ -f "$marker" ]; then
+    stored_pairs=$(LC_ALL=C sort -u "$marker" 2>/dev/null | grep -v '^$' || true)
+  fi
+  new_pairs=$(comm -23 \
+    <(printf '%s\n' "$current_pairs") \
+    <(printf '%s\n' "$stored_pairs") \
+    | grep -v '^$' || true)
+  if [ -z "$new_pairs" ]; then
+    return 0
+  fi
+  { printf '%s\n' "$stored_pairs"; printf '%s\n' "$current_pairs"; } \
+    | grep -v '^$' \
+    | LC_ALL=C sort -u > "$marker"
+  return 1
 }
 
 # --- Emit a blocking Stop/PreToolUse JSON decision --------------------------

@@ -75,17 +75,10 @@ if grep -qE '"command"[[:space:]]*:[[:space:]]*"[^"]*(pytest|npm (run )?test|yar
   exit 0
 fi
 
-# --- Fingerprint-based one-block backstop ---
-current_fp=$(compute_fingerprint)
-
-if [ -f "$marker" ]; then
-  stored=$(cat "$marker" 2>/dev/null || echo "")
-  if [ "$current_fp" = "$stored" ]; then
-    exit 0
-  fi
+# --- Set-union one-block backstop (loop-proof + shrink-safe) ---
+if marker_check_and_update "$marker"; then
+  exit 0
 fi
-
-echo "$current_fp" > "$marker"
 
 file_count=$(echo "${CK_ALL_CHANGES}" | grep -c . || echo 0)
 reason="Code changes in $file_count file(s) (~${diff_lines} lines), but no test command was run in this session. Run the test suite (e.g., $test_command_hint) and confirm it passes before completing. If tests genuinely do not apply to this change, say so explicitly and the user will decide."

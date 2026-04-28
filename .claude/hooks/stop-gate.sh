@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Stop-gate: requests a code review once per unique change-set fingerprint.
-# On the first stop with non-trivial changes, blocks and records the
-# fingerprint. On subsequent stops with the same fingerprint, allows —
-# Claude has already been asked. Fingerprint change (new files or content
-# edits) re-requests. Diff-empty resets.
+# Stop-gate: requests a code review once per unreviewed (path, content-hash)
+# pair. The marker stores the union of all pairs ever blocked-on this
+# session; on each stop, current pairs minus stored pairs = unreviewed work.
 #
-# Fingerprint is git-tree-based and covers content edits, not just file names.
+# Adding work or editing in place produces new pairs → re-blocks.
+# Discarding work shrinks the set (current ⊆ stored) → allows.
+# Diff-empty resets the marker.
+#
 # Markers live under the per-user XDG cache (not /tmp) to prevent symlink
 # attacks and cross-user collisions on shared systems.
 
@@ -38,20 +39,21 @@ if [ "${diff_lines:-0}" -lt 5 ] && [ -z "${CK_UNTRACKED_FILES}" ]; then
   exit 0
 fi
 
-current_fp=$(compute_fingerprint)
-
-# Already requested for this fingerprint? Allow.
-if [ -f "$marker" ]; then
-  stored=$(cat "$marker" 2>/dev/null || echo "")
-  if [ "$current_fp" = "$stored" ]; then
-    exit 0
-  fi
+# Set-union marker: allow when current pairs ⊆ stored pairs (already blocked
+# on every artifact). Otherwise update marker and block.
+if marker_check_and_update "$marker"; then
+  exit 0
 fi
-
-# First time for this fingerprint — record and block.
-echo "$current_fp" > "$marker"
 
 file_count=$(echo "${CK_ALL_CHANGES}" | grep -c . || echo 0)
 file_list=$(echo "${CK_ALL_CHANGES}" | head -20 | tr '\n' ',' | sed 's/,$//; s/,/, /g')
-reason="Code changes detected in $file_count file(s) (~${diff_lines} lines). Before completing, review the changes: read each changed file, check for bugs, security issues, error handling gaps, and adherence to CLAUDE.md conventions. Report findings to the user, then you may complete. Changed files: $file_list"
+
+# Prescriptive: name the skills that do the review, don't just describe the action.
+# `/qa` fans out three parallel reviewers (security, correctness, architecture).
+# `/pre-pr-review` ships the diff to a different model (gpt-4.1) for council-of-LLMs coverage.
+extra=""
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+  extra=" Then run /pre-pr-review before shipping for a different-model second opinion."
+fi
+reason="Code changes detected in $file_count file(s) (~${diff_lines} lines). Run /qa to fan out three parallel reviewers (security, correctness, architecture) before completing. If /qa is unavailable, review the changes directly: check each file for bugs, security issues, error handling, and CLAUDE.md adherence, then report findings.${extra} Changed files: $file_list"
 emit_block "$reason"
